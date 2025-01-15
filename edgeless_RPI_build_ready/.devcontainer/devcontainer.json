@@ -1,0 +1,41 @@
+{
+  "name": "Edgeless DEV",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--cap-add=NET_ADMIN",
+    "--security-opt",
+    "seccomp=unconfined",
+    "--name=edgeless_devcontainer",
+    "--device=/dev/net/tun",
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "vadimcn.vscode-lldb",
+        "zxh404.vscode-proto3",
+        "stkb.rewrap"
+      ],
+      "settings": {
+        "editor.tabSize": 4,
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnSave": true
+      }
+    },
+    "forwardPorts": [
+      7001,
+      7011,
+      7021,
+      7035
+    ],
+    "mounts": [
+      "type=volume,target=${containerWorkspaceFolder}/target",
+      "source=edgeless-zshhistory,target=/commandhistory,type=volume"
+    ],
+    "remoteUser": "edgeless",
+    "postStartCommand": "sudo chown -R edgeless:edgeless ${containerWorkspaceFolder}/target"
+  }
+}

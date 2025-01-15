@@ -1,0 +1,23 @@
+[general]
+node_id = "c7126760-223a-44a4-9a61-4ce1eaca8141"
+agent_url = "http://127.0.0.1:7005"
+agent_url_announced = ""
+invocation_url = "http://127.0.0.1:7006"
+invocation_url_announced = ""
+node_register_url = "http://127.0.0.1:7004"
+subscription_refresh_interval_sec = 2
+
+[telemetry]
+metrics_url = "http://127.0.0.1:7007"
+performance_samples = false
+
+[wasm_runtime]
+enabled = true
+
+[resources]
+http_ingress_url = "http://127.0.0.1:7008"
+http_ingress_provider = "http-ingress-1"
+http_egress_provider = "http-egress-1"
+file_log_provider = "file-log-1"
+redis_provider = "redis-1"
+dda_provider = "dda-1"

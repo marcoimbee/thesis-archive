@@ -1,0 +1,9 @@
+{
+    "id": "http_requestor",
+    "function_type": "RUST_WASM",
+    "version": "0.1",
+    "build": "Cargo.toml",
+    "outputs": [
+        "http_e"
+    ]
+}

@@ -1,0 +1,30 @@
+{
+    "functions": [
+        {
+            "name": "http_processor",
+            "class_specification": {
+                "id": "http_processor",
+                "function_type": "RUST_WASM",
+                "version": "0.1",
+                "code": "../../functions/http_processor/http_processor.wasm",
+                "outputs": []
+            },
+            "output_mapping": {},
+            "annotations": {}
+        }
+    ],
+    "resources": [
+        {
+            "name": "http-ingress-1-1",
+            "class_type": "http-ingress",
+            "output_mapping": {
+                "new_request": "http_processor"
+            },
+            "configurations": {
+                "host": "demo.edgeless.com",
+                "methods": "POST"
+            }
+        }
+    ],
+    "annotations": {}
+}

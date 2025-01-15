@@ -1,0 +1,90 @@
+{
+    "functions": [
+        {
+            "name": "external_trigger",
+            "class_specification": {
+                "id": "http_read_number",
+                "function_type": "RUST_WASM",
+                "version": "0.1",
+                "code": "../../functions/http_read_number/http_read_number.wasm",
+                "outputs": [
+                    "parsed_value"
+                ]
+            },
+            "output_mapping": {
+                "parsed_value": "incr"
+            },
+            "annotations": {}
+        },
+        {
+            "name": "incr",
+            "class_specification": {
+                "id": "incr",
+                "function_type": "RUST_WASM",
+                "version": "0.1",
+                "code": "../../functions/incr/incr.wasm",
+                "outputs": [
+                    "result"
+                ]
+            },
+            "output_mapping": {
+                "result": "double"
+            },
+            "annotations": {}
+        },
+        {
+            "name": "double",
+            "class_specification": {
+                "id": "double",
+                "function_type": "RUST_WASM",
+                "version": "0.1",
+                "code": "../../functions/double/double.wasm",
+                "outputs": [
+                    "result"
+                ]
+            },
+            "output_mapping": {
+                "result": "external_sink"
+            },
+            "annotations": {}
+        },
+        {
+            "name": "external_sink",
+            "class_specification": {
+                "id": "http_write_number",
+                "function_type": "RUST_WASM",
+                "version": "0.1",
+                "code": "../../functions/http_write_number/http_write_number.wasm",
+                "outputs": [
+                    "external_sink"
+                ]
+            },
+            "output_mapping": {
+                "external_sink": "http-egress"
+            },
+            "annotations": {
+                "init-payload": "localhost:10000"
+            }
+        }
+    ],
+    "resources": [
+        {
+            "name": "http-ingress",
+            "class_type": "http-ingress",
+            "output_mapping": {
+                "new_request": "external_trigger"
+            },
+            "configurations": {
+                "host": "demo.edgeless-project.eu",
+                "methods": "POST"
+            }
+        },
+        {
+            "name": "http-egress",
+            "class_type": "http-egress",
+            "output_mapping": {},
+            "configurations": {}
+        }
+    ],
+    "annotations": {}
+}

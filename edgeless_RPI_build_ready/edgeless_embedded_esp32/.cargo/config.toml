@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: © 2023 Technical University of Munich, Chair of Connected Mobility
+# SPDX-FileCopyrightText: © 2023 Siemens AG
+# SPDX-License-Identifier: MIT
+[target.xtensa-esp32-none-elf]
+runner = "espflash flash --monitor"
+
+[target.xtensa-esp32s3-none-elf]
+runner = "espflash flash --monitor"
+
+
+[env]
+ESP_LOGLEVEL="INFO"
+
+[build]
+rustflags = [
+  "-C", "link-arg=-Tlinkall.x",
+  # "-C", "link-arg=-nostartfiles",
+  "-C", "link-arg=-Trom_functions.x",
+]
+
+target = "xtensa-esp32-none-elf"
+
+[unstable]
+build-std = ["alloc", "core"]
