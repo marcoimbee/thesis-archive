@@ -15,9 +15,7 @@
                 "generated_samples": "extract_features"
             },
             "annotations": {
-                "node_id_match_any": [
-                    "c7126760-223a-44a4-9a61-4ce1eaca8141"
-                ]
+                "node_id_match_any": "c7126760-223a-44a4-9a61-4ce1eaca8141"
             }
         },
         {
