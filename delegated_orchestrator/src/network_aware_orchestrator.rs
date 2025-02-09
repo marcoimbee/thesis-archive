@@ -1,9 +1,7 @@
 use edgeless_orc::proxy::Proxy;
 use redis::Commands;
-use std::fs::File;
-use std::io::Read;
-use serde_json::Value;
 use std::process::Command;
+use uuid::Uuid;
 
 /*
     TODO: (maybe?) rebalance only if the latency changed of some quantity from the last time
@@ -14,7 +12,8 @@ struct NodeDesc {
     function_instances: Vec<edgeless_api::function_instance::ComponentId>,
     capabilities: edgeless_api::node_registration::NodeCapabilities,    
     resource_providers: std::collections::HashSet<String>,
-    node_to_orc_latency: f64,
+    node_to_node_latency: f64,      // Latency from this node to the other one
+    node_to_orc_latency: f64,       // Latency from this node to the orchestrator
 }
 
 #[derive(Debug)]
@@ -34,11 +33,12 @@ pub struct NetworkAwareOrchestrator {
     nodes: std::collections::HashMap<edgeless_api::function_instance::NodeId, NodeDesc>,
     instances:std::collections::HashMap<edgeless_api::function_instance::ComponentId, InstanceDesc>,
     latency_threshold: f64,
-    relocation_mode: String,
+    num_relocations: u64,       // How many functions to relocate, if possible
+    relocated: bool,            // Tells if relocation(s) have already been done
 }
 
 impl NetworkAwareOrchestrator {
-    pub fn new(redis_url: &str, latency_threshold: f64, relocation_mode: &str) -> anyhow::Result<Self> {
+    pub fn new(redis_url: &str, latency_threshold: f64, num_relocations: u64) -> anyhow::Result<Self> {
         let proxy = match edgeless_orc::proxy_redis::ProxyRedis::new(redis_url, false, None) {
             Ok(proxy) => proxy,
             Err(err) => anyhow::bail!("could not connect to Redis at {}: {}", redis_url, err),
@@ -50,7 +50,8 @@ impl NetworkAwareOrchestrator {
             nodes: std::collections::HashMap::new(),
             instances: std::collections::HashMap::new(),
             latency_threshold,
-            relocation_mode: relocation_mode.to_string(),
+            num_relocations,
+            relocated: false,          
         })
     }
 
@@ -59,13 +60,8 @@ impl NetworkAwareOrchestrator {
         self.update_node_desc();
 
         let mut counter = 0;
-        for (node_id, node_desc) in &self.nodes {
+        for (_node_id, node_desc) in &self.nodes {
             for lid in &node_desc.function_instances {
-                let instance_desc = self
-                    .instances
-                    .get(lid)
-                    .expect("Function instance disappeared");
-
                 let status = Command::new("../edgeless/target/debug/proxy_cli")
                     .arg("intent")
                     .arg("migrate")
@@ -116,7 +112,7 @@ impl NetworkAwareOrchestrator {
         //     && !self.proxy.updated(edgeless_orc::proxy::Category::ResourceProviders)
         //     && !self.proxy.updated(edgeless_orc::proxy::Category::ActiveInstances)
         // {
-        //     println!("[INFO] Nothing has changed since the last iteration. Finishing...");
+        //     println!("[INFO] Nothing has changed since the last iteration. Nothing to do.");
         //     return (false, 0);
         // }
 
@@ -168,6 +164,7 @@ impl NetworkAwareOrchestrator {
                     function_instances: vec![],
                     capabilities,
                     resource_providers: std::collections::HashSet::new(),
+                    node_to_node_latency: 0.0,
                     node_to_orc_latency: 0.0,
                 },
             );
@@ -175,9 +172,7 @@ impl NetworkAwareOrchestrator {
             println!("[INFO] Fetched capabilities for node {}", node_id);
         }
 
-        // Add function instances, only keep those that do not have any
-        // specific deployment requirements (node_id_match_any annotation set)
-        // Those will be the relocatable functions
+        // Add function instances spawned on the node
         let mut instances = self.proxy.fetch_nodes_to_instances();
         if instances.is_empty() {
             println!("[INFO] No function instances found");
@@ -194,7 +189,6 @@ impl NetworkAwareOrchestrator {
                 for instance in instances {
                     if let edgeless_orc::proxy::Instance::Function(lid) = instance {
                         println!("\t-> LID: {}", lid.to_string());
-
                         node_function_instances.push(*lid);
                     }
                 }
@@ -212,61 +206,132 @@ impl NetworkAwareOrchestrator {
             node_resource_providers.insert(provider_id);
         }
 
-        // Write node-to-orchestrator latencies
+        // Get latencies
         let client = redis::Client::open(self.redis_url.clone()).expect("[ERROR] Failed to create Redis client");
         let mut conn = client.get_connection().expect("[ERROR] Failed to get Redis connection");
+
+        // Obtaining node-to-node latencies
+        let node_ids: Vec<_> = self.nodes.keys().cloned().collect();        // Needed to avoid double borrowing problems
+        for node1_id in &node_ids {
+            if let Some(node1_desc) = self.nodes.get_mut(node1_id) {
+                for node2_id in &node_ids {
+                    if node1_id != node2_id {
+                        let redis_key = format!("latency:{}:{}", node1_id, node2_id);
+                        match conn.get::<_, Option<f64>>(&redis_key) {
+                            Ok(Some(latency_value)) => {
+                                node1_desc.node_to_node_latency = latency_value;
+                                println!(
+                                    "[INFO] {} ---> {} ms ---> {}",
+                                    node1_id, latency_value, node2_id
+                                );
+                            }
+                            Ok(None) => {
+                                println!("[WARN] Key {} not found", redis_key);
+                            }
+                            Err(err) => {
+                                println!("[ERROR] Failed to fetch key {}: {}", redis_key, err);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Obtaining node-to-orc latencies
         for (node_id, node_desc) in &mut self.nodes {
             let redis_key = format!("latency:{}:orc", node_id);
-
             match conn.get::<_, Option<f64>>(&redis_key) {
                 Ok(Some(latency_value)) => {
                     node_desc.node_to_orc_latency = latency_value;
-                    println!("[INFO] Updated node {} with latency {}", node_id, latency_value);
+                    println!("[INFO] {} ---> {} ms ---> E-ORC", node_id, latency_value);
                 }
                 Ok(None) => {
                     println!("[WARN] Key {} not found", redis_key);
                 }
                 Err(err) => {
-                    println!("[ERROR] failed to fetch key {}", redis_key);
+                    println!("[ERROR] Failed to fetch key {}: {}", redis_key, err);
                 }
             }
         }
     }
 
-    fn migrate(&mut self) -> usize {
-        // Determine the node which is closest to the ORC
-        let closest_node_id = self.nodes
-            .iter()
-            .min_by(|(_, desc_1), (_, desc_2)| desc_1.node_to_orc_latency.partial_cmp(&desc_2.node_to_orc_latency).unwrap())
-            .map(|(node_id, _)| node_id.clone())
-            .unwrap();
+    fn string_to_uuid(&mut self, input: &str) -> Uuid {
+        Uuid::parse_str(input).unwrap_or_else(|_| Uuid::nil())
+    }
 
-        println!("[INFO] Closest node to the E-ORC: {}", closest_node_id);
+    fn get_relocatable_functions_count(&self, node_uuid: &Uuid) -> usize {
+        if let Some(node_desc) = self.nodes.get(node_uuid) {
+            node_desc
+                .function_instances
+                .iter()
+                .filter(|&lid| {
+                    if let Some(instance_desc) = self.instances.get(lid) {
+                        instance_desc.relocatable
+                    } else {
+                        false
+                    }
+                })
+                .count()
+        } else {
+            0
+        }
+    }
+    
+
+    fn migrate(&mut self) -> usize {
+        
+        let rpi_node_uuid = self.string_to_uuid("c7126760-223a-44a4-9a61-4ce1eaca8141");            // TODO: better way to handle these bastards
+        let vm_node_uuid = self.string_to_uuid("7eaa47f1-7212-44c6-829e-bccc2e467bff");
+
+        let rpi_to_vm_latency = self
+            .nodes
+            .get(&rpi_node_uuid)
+            .map_or(f64::INFINITY, |desc| desc.node_to_node_latency);
+
+        println!("[INFO] RPI to VM node latency: {} ms. Threshold set to {} ms.", rpi_to_vm_latency, self.latency_threshold);
+        println!("----------------------------------------------------------------------------------");
+
+        // Check if we have already relocated and if so return right away
+        if self.relocated {
+            println!("[INFO] Relocation round already performed. Exiting...");
+            return 0;
+        }
+
+        // Check if no relocatable functions exist on the RPI, if so we can return right away
+        if self.get_relocatable_functions_count(&rpi_node_uuid) == 0 {
+            println!("[INFO] No relocatable functions found on node {} (RPI node)", rpi_node_uuid);
+            return 0;
+        }
 
         let mut migrations = Vec::new();        // Migrations vector
 
-        println!("----------------------------------------------------------------------------------");
         // Determine migrations to be performed
-        for (node_id, node_desc) in &self.nodes {
-            for lid in &node_desc.function_instances {
-                let instance_desc = self
-                    .instances
-                    .get(lid)
-                    .expect("Function instance disappeared");
+        if rpi_to_vm_latency < self.latency_threshold {
+            if let Some(node_desc) = self.nodes.get(&rpi_node_uuid) {
+                let mut relocations_count = 0;          // Tracks the number of performed relocations
 
-                if instance_desc.relocatable {
-                    println!("[INFO] {} (spawned on: {}) is relocatable", lid, node_id);
+                for lid in &node_desc.function_instances {
+                    if relocations_count >= self.num_relocations {
+                        break;      // Desired # relocations reached
+                    }
 
-                    if !(node_id == &closest_node_id) {
-                        println!("\t-> Relocating {} from {} to {}...", lid, node_id, closest_node_id);
+                    let instance_desc = self.instances.get(lid).expect("Function instance disappeared");
+
+                    if instance_desc.relocatable {
+                        println!("[INFO] Relocating {} from {} to {}", lid, rpi_node_uuid, vm_node_uuid);
 
                         migrations.push(edgeless_orc::deploy_intent::DeployIntent::Migrate(
                             *lid,
-                            vec![closest_node_id.clone()],
+                            vec![vm_node_uuid],
                         ));
+
+                        relocations_count += 1;
+                        self.relocated = true;
                     }
                 }
             }
+        } else {
+            println!("[INFO] RPI-to-VM latency exceeds threshold, no migration performed.");
         }
 
         if !migrations.is_empty() {
