@@ -15,6 +15,12 @@ impl EdgeFunction for HandleClassResultFun {
             Unknown,
         }
 
+        #[derive(Debug, Deserialize)]
+        struct ClassificationPayload {
+            batch_id: u64,
+            classification: Classification,
+        }
+
         let display_class_result = |result: &Classification| -> String {
             match result {
                 Classification::LowActivity => "Low activity detected".to_string(),
@@ -24,7 +30,7 @@ impl EdgeFunction for HandleClassResultFun {
         };
 
         let str_message = core::str::from_utf8(encoded_message).unwrap();
-        let class_result: Classification = match serde_json::from_str(str_message) {
+        let class_result: ClassificationPayload = match serde_json::from_str(str_message) {
             Ok(parsed_class_result) => parsed_class_result,
             Err(err) => {
                 log::info!("Failed to deserialize message: {}", err);
@@ -32,7 +38,10 @@ impl EdgeFunction for HandleClassResultFun {
             }
         };
 
-        log::info!("{}", display_class_result(&class_result));
+        let batch_id = class_result.batch_id;
+        cast("aoi_measurement_end", format!("{}", batch_id).as_bytes());
+
+        log::info!("{}", display_class_result(&class_result.classification));
     }
 
     fn handle_call(_src: InstanceId, _encoded_message: &[u8]) -> CallRet {

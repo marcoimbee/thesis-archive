@@ -18,6 +18,12 @@ impl EdgeFunction for ClassifyFun {
             var_z: f64,
         }
 
+        #[derive(Debug, Deserialize)]
+        struct ReceivedPayload {
+            batch_id: u64,
+            features: Features,
+        }
+
         #[derive(Debug, Serialize)]
         enum Classification {
             LowActivity,
@@ -25,14 +31,23 @@ impl EdgeFunction for ClassifyFun {
             Unknown,
         }
 
+        #[derive(Debug, Serialize)]
+        struct ClassificationPayload {
+            batch_id: u64,
+            classification: Classification,
+        }
+
         let str_message = core::str::from_utf8(encoded_message).unwrap();
-        let extracted_features: Features = match serde_json::from_str(str_message) {
-            Ok(parsed_extracted_features) => parsed_extracted_features,
+        let received_data: ReceivedPayload = match serde_json::from_str(str_message) {
+            Ok(parsed_received_data) => parsed_received_data,
             Err(err) => {
                 log::info!("Failed to deserialize message: {}", err);
                 return;
             }
         };
+
+        let batch_id = received_data.batch_id;
+        let extracted_features = received_data.features;
 
         let classification_result;
         if extracted_features.var_x < 30.0 && extracted_features.var_y < 30.0 && extracted_features.var_z < 30.0 {
@@ -43,9 +58,14 @@ impl EdgeFunction for ClassifyFun {
             classification_result = Classification::Unknown
         }
 
-        log::info!("classified the received features");
+        log::info!("Classified the received features");
 
-        let serialized_classification_result = match serde_json::to_string(&classification_result) {
+        let payload = ClassificationPayload {
+            batch_id,
+            classification: classification_result,
+        };
+
+        let serialized_classification_result = match serde_json::to_string(&payload) {
             Ok(json) => json,
             Err(e) => {
                 log::info!("Error serializing classification result: {}", e);

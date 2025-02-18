@@ -25,15 +25,29 @@ impl EdgeFunction for ExtractFeaturesFun {
             var_z: f64,
         }
 
+        #[derive(Debug, Deserialize)]
+        struct ReceivedPayload {
+            batch_id: u64,
+            batch: Vec<AccelerometerData>,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct FeaturesPayload {
+            batch_id: u64,
+            features: Features,
+        }
 
         let str_message = core::str::from_utf8(encoded_message).unwrap();
-        let accelerometer_data: Vec<AccelerometerData> = match serde_json::from_str(str_message) {
-            Ok(parsed_accelerometer_data) => parsed_accelerometer_data,
+        let received_data: ReceivedPayload = match serde_json::from_str(str_message) {
+            Ok(parsed_received_data) => parsed_received_data,
             Err(err) => {
                 log::info!("Failed to deserialize message: {}", err);
                 return;
             }
         };
+
+        let batch_id = received_data.batch_id;
+        let accelerometer_data = received_data.batch;
 
         // Feature extraction
         let batch_size = accelerometer_data.len() as f64;
@@ -63,9 +77,14 @@ impl EdgeFunction for ExtractFeaturesFun {
             var_z: var_z / batch_size,
         };
 
-        log::info!("features have been extracted");
+        log::info!("Features have been extracted");
 
-        let serialized_features = match serde_json::to_string(&features) {
+        let payload = FeaturesPayload {
+            batch_id,
+            features,
+        };
+
+        let serialized_features = match serde_json::to_string(&payload) {
             Ok(json) => json,
             Err(e) => {
                 log::info!("Error serializing extracted features: {}", e);

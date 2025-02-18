@@ -4,6 +4,7 @@
     "version": "1.0",
     "build": "Cargo.toml",
     "outputs": [
-        "generated_samples"
+        "generated_samples",
+        "batch_generation_timestamp"
     ]
 }

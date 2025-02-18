@@ -8,14 +8,17 @@
                 "version": "0.1",
                 "code": "functions/generate_samples/generate_samples.wasm",
                 "outputs": [
-                    "generated_samples"
+                    "generated_samples",
+                    "aoi_measurement_start"
                 ]
             },
             "output_mapping": {
-                "generated_samples": "extract_features"
+                "generated_samples": "extract_features",
+                "aoi_measurement_start": "aoi-log"
             },
             "annotations": {
-                "node_id_match_any": "c7126760-223a-44a4-9a61-4ce1eaca8141"
+                "node_id_match_any": "c7126760-223a-44a4-9a61-4ce1eaca8141",
+                "init-payload": "batch_size=100,generation_interval_ms=5000"
             }
         },
         {
@@ -48,24 +51,37 @@
             "output_mapping": {
                 "classification_result": "handle_class_result"
             },
-	    "annotations": {}
+	        "annotations": {}
         },
-	{
+	    {
             "name": "handle_class_result",
             "class_specification": {
                 "id": "handle_class_result",
                 "function_type": "RUST_WASM",
                 "version": "0.1",
                 "code": "functions/handle_class_result/handle_class_result.wasm",
-                "outputs": []
+                "outputs": [
+                    "aoi_measurement_end"
+                ]
             },
-            "output_mapping": {},
+            "output_mapping": {
+                "aoi_measurement_end": "aoi-log"
+            },
             "annotations": {
                 "node_id_match_any": "c7126760-223a-44a4-9a61-4ce1eaca8141"
             }
         }
-
     ],
-    "resources": [],
+    "resources": [
+        {
+            "name": "aoi-log",
+            "class_type": "file-log",
+            "output_mapping": {},
+            "configurations": {
+                "filename": "/home/pi/Desktop/aoi_log.log",
+                "add-timestamp": "true"
+            }
+        }
+    ],
     "annotations": {}
 }
